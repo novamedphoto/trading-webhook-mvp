@@ -6,7 +6,7 @@ export default async function handler(req, res) {
 
   const secret = process.env.WEBHOOK_SECRET;
 
-  // ✅ FIX BODY PARSING
+  // ✅ Parseo robusto del body
   const body = typeof req.body === "string"
     ? JSON.parse(req.body || "{}")
     : (req.body || {});
@@ -38,7 +38,7 @@ Side: ${body.side?.toUpperCase()}
 Price: ${price}
 Qty: ${qty}
 Risk USD: ${riskUsd}
-Env: ${process.env.ENV}
+Env: ${process.env.ENV || "staging"}
 `;
 
     await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
