@@ -6,7 +6,6 @@ export default async function handler(req, res) {
 
   const secret = process.env.WEBHOOK_SECRET;
 
-  // ✅ Parseo robusto del body
   const body = typeof req.body === "string"
     ? JSON.parse(req.body || "{}")
     : (req.body || {});
@@ -27,9 +26,6 @@ export default async function handler(req, res) {
 
   // --- TELEGRAM ALERT ---
   try {
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = process.env.TELEGRAM_CHAT_ID;
-
     const message = `
 📈 Signal Received
 
@@ -41,11 +37,11 @@ Risk USD: ${riskUsd}
 Env: ${process.env.ENV || "staging"}
 `;
 
-    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        chat_id: chatId,
+        chat_id: process.env.TELEGRAM_CHAT_ID,
         text: message,
       }),
     });
@@ -53,6 +49,29 @@ Env: ${process.env.ENV || "staging"}
     console.log("Telegram sent");
   } catch (err) {
     console.error("Telegram error:", err);
+  }
+
+  // --- GOOGLE SHEETS LOGGING ---
+  try {
+    await fetch(process.env.SHEETS_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        env: process.env.ENV || "staging",
+        symbol: body.symbol,
+        side: body.side,
+        entry_price: price,
+        stop_price: stop,
+        qty: qty,
+        risk_usd: riskUsd,
+        stop_distance: stopDistance,
+        notes: ""
+      }),
+    });
+
+    console.log("Sheets logged");
+  } catch (err) {
+    console.error("Sheets error:", err);
   }
 
   return res.status(200).json({
