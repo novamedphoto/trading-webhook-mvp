@@ -6,7 +6,10 @@ export default async function handler(req, res) {
 
   const secret = process.env.WEBHOOK_SECRET;
 
-  const body = req.body || {};
+  // ✅ FIX BODY PARSING
+  const body = typeof req.body === "string"
+    ? JSON.parse(req.body || "{}")
+    : (req.body || {});
 
   if (body.secret !== secret) {
     return res.status(401).json({ error: "Unauthorized" });
