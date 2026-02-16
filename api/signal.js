@@ -24,7 +24,9 @@ export default async function handler(req, res) {
 
   const qty = Math.floor(riskUsd / stopDistance);
 
-  // --- TELEGRAM ALERT ---
+  // =============================
+  // TELEGRAM ALERT
+  // =============================
   try {
     const message = `
 📈 Signal Received
@@ -37,23 +39,29 @@ Risk USD: ${riskUsd}
 Env: ${process.env.ENV || "staging"}
 `;
 
-    await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: process.env.TELEGRAM_CHAT_ID,
-        text: message,
-      }),
-    });
+    const telegramResponse = await fetch(
+      `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: process.env.TELEGRAM_CHAT_ID,
+          text: message,
+        }),
+      }
+    );
 
-    console.log("Telegram sent");
+    console.log("Telegram status:", telegramResponse.status);
+
   } catch (err) {
     console.error("Telegram error:", err);
   }
 
-  // --- GOOGLE SHEETS LOGGING ---
+  // =============================
+  // GOOGLE SHEETS LOGGING
+  // =============================
   try {
-    await fetch(process.env.SHEETS_WEBHOOK_URL, {
+    const sheetsResponse = await fetch(process.env.SHEETS_WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -67,9 +75,14 @@ Env: ${process.env.ENV || "staging"}
         stop_distance: stopDistance,
         notes: ""
       }),
+      redirect: "follow"
     });
 
-    console.log("Sheets logged");
+    const responseText = await sheetsResponse.text();
+
+    console.log("Sheets status:", sheetsResponse.status);
+    console.log("Sheets response:", responseText);
+
   } catch (err) {
     console.error("Sheets error:", err);
   }
