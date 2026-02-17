@@ -1,9 +1,15 @@
 export default async function handler(req, res) {
 
+  // =============================
+  // METHOD VALIDATION
+  // =============================
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
+  // =============================
+  // SECRET VALIDATION
+  // =============================
   const secret = process.env.WEBHOOK_SECRET;
 
   const body = typeof req.body === "string"
@@ -14,26 +20,52 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
+  // =============================
+  // PRICE INPUT
+  // =============================
   const price = Number(body.price || 0);
-  const capital = 5000;
-  const riskPct = 1;
+
+  if (!price || price <= 0) {
+    return res.status(400).json({ error: "Invalid price" });
+  }
+
+  // =============================
+  // RISK ENGINE (CONFIGURABLE)
+  // =============================
+  const capital = Number(process.env.DEMO_CAPITAL_USD || 5000);
+  const riskPct = Number(process.env.RISK_PCT_PER_TRADE || 1);
+  const stopPct = Number(process.env.STOP_PCT || 1); // 1 = 1%
 
   const riskUsd = capital * (riskPct / 100);
-  const stop = price * 0.99;
-  const stopDistance = price - stop;
 
-  const qty = Math.floor(riskUsd / stopDistance);
+  let stop;
+
+  if (body.side?.toLowerCase() === "buy") {
+    stop = price * (1 - stopPct / 100);
+  } else if (body.side?.toLowerCase() === "sell") {
+    stop = price * (1 + stopPct / 100);
+  } else {
+    stop = price * (1 - stopPct / 100);
+  }
+
+  const stopDistance = Math.abs(price - stop);
+
+  const qty = stopDistance > 0
+    ? Math.floor(riskUsd / stopDistance)
+    : 0;
 
   // =============================
   // TELEGRAM ALERT
   // =============================
   try {
+
     const message = `
 📈 Signal Received
 
 Symbol: ${body.symbol}
 Side: ${body.side?.toUpperCase()}
 Price: ${price}
+Stop: ${stop.toFixed(2)}
 Qty: ${qty}
 Risk USD: ${riskUsd}
 Env: ${process.env.ENV || "staging"}
@@ -61,6 +93,7 @@ Env: ${process.env.ENV || "staging"}
   // GOOGLE SHEETS LOGGING
   // =============================
   try {
+
     const sheetsResponse = await fetch(process.env.SHEETS_WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -87,11 +120,15 @@ Env: ${process.env.ENV || "staging"}
     console.error("Sheets error:", err);
   }
 
+  // =============================
+  // FINAL RESPONSE
+  // =============================
   return res.status(200).json({
     ok: true,
     symbol: body.symbol,
     side: body.side,
     price,
+    stop,
     qty,
     riskUsd
   });
