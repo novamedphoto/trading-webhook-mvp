@@ -20,14 +20,15 @@ export default async function handler(req, res) {
   const price = Number(body.price || 0);
   const capital = Number(process.env.DEMO_CAPITAL_USD || 5000);
   const riskPct = Number(process.env.RISK_PCT_PER_TRADE || 1);
-  const stopPct = 0.01; // 1% stop distance
+  const stopPct = 0.01; // 1% stop
+  const rewardMultiple = 2; // 2R take profit
 
   const side = (body.side || "").toLowerCase();
 
   const riskUsd = capital * (riskPct / 100);
 
   // =============================
-  // STOP LOGIC CORRECTA
+  // STOP LOGIC
   // =============================
   let stop;
 
@@ -48,6 +49,17 @@ export default async function handler(req, res) {
   const qty = Math.floor(riskUsd / stopDistance);
 
   // =============================
+  // TAKE PROFIT LOGIC
+  // =============================
+  let takeProfit;
+
+  if (side === "buy") {
+    takeProfit = price + (stopDistance * rewardMultiple);
+  } else {
+    takeProfit = price - (stopDistance * rewardMultiple);
+  }
+
+  // =============================
   // TELEGRAM ALERT
   // =============================
   try {
@@ -58,6 +70,7 @@ Symbol: ${body.symbol}
 Side: ${side.toUpperCase()}
 Price: ${price}
 Stop: ${stop.toFixed(2)}
+Take Profit: ${takeProfit.toFixed(2)}
 Qty: ${qty}
 Risk USD: ${riskUsd}
 Env: ${process.env.ENV || "staging"}
@@ -94,6 +107,7 @@ Env: ${process.env.ENV || "staging"}
         side: side,
         entry_price: price,
         stop_price: stop,
+        take_profit: takeProfit,
         qty: qty,
         risk_usd: riskUsd,
         stop_distance: stopDistance,
@@ -117,6 +131,7 @@ Env: ${process.env.ENV || "staging"}
     side: side,
     price,
     stop,
+    takeProfit,
     qty,
     riskUsd
   });
