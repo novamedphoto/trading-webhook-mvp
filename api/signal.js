@@ -16,9 +16,12 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
+    const symbol = body.symbol;
+    const side = body.side?.toLowerCase();
     const price = Number(body.price || 0);
-    if (!price || price <= 0) {
-      return res.status(400).json({ error: "Invalid price" });
+
+    if (!symbol || !side || !price || price <= 0) {
+      return res.status(400).json({ error: "Invalid payload" });
     }
 
     // ==========================================
@@ -79,13 +82,41 @@ export default async function handler(req, res) {
     }
 
     // ==========================================
+    // 🔹 IDEMPOTENCIA (DUPLICATE CHECK)
+    // ==========================================
+
+    let isDuplicate = false;
+
+    try {
+      const duplicateResponse = await fetch(
+        `${process.env.SHEETS_WEBHOOK_URL}?action=check_duplicate&symbol=${encodeURIComponent(symbol)}&side=${encodeURIComponent(side.toUpperCase())}&price=${price}`
+      );
+
+      const duplicateData = await duplicateResponse.json();
+      isDuplicate = duplicateData.duplicate === true;
+
+    } catch (err) {
+      console.error("Duplicate check error:", err);
+    }
+
+    if (isDuplicate) {
+      return res.status(200).json({
+        ok: false,
+        error: "REJECTED_DUPLICATE",
+        symbol,
+        side,
+        price
+      });
+    }
+
+    // ==========================================
     // 🔹 STOP / TAKE PROFIT
     // ==========================================
 
     let stop;
     let takeProfit;
 
-    if (body.side?.toLowerCase() === "sell") {
+    if (side === "sell") {
       stop = price * 1.01;
       const stopDistanceTemp = stop - price;
       takeProfit = price - (stopDistanceTemp * 2);
@@ -106,8 +137,8 @@ export default async function handler(req, res) {
       const message = `
 📈 Signal Received
 
-Symbol: ${body.symbol}
-Side: ${body.side?.toUpperCase()}
+Symbol: ${symbol}
+Side: ${side.toUpperCase()}
 Price: ${price}
 Equity: ${equity.toFixed(2)}
 Risk USD: ${riskUsd.toFixed(2)}
@@ -142,8 +173,8 @@ Take Profit: ${takeProfit.toFixed(2)}
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           env: process.env.ENV || "staging",
-          symbol: body.symbol,
-          side: body.side,
+          symbol: symbol,
+          side: side.toUpperCase(),
           entry_price: price,
           stop_price: stop,
           take_profit: takeProfit,
