@@ -21,9 +21,9 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Invalid price" });
     }
 
-    // =============================
+    // ==========================================
     // 🔹 EQUITY DINÁMICO
-    // =============================
+    // ==========================================
 
     const baseCapital = Number(process.env.DEMO_CAPITAL_USD || 5000);
     const riskPct = Number(process.env.RISK_PCT_PER_TRADE || 1);
@@ -40,7 +40,7 @@ export default async function handler(req, res) {
 
     } catch (err) {
       console.error("Equity fetch error:", err);
-      totalPnl = 0; // fallback
+      totalPnl = 0;
     }
 
     const equity = baseCapital + totalPnl;
@@ -51,29 +51,56 @@ export default async function handler(req, res) {
 
     const riskUsd = equity * (riskPct / 100);
 
-    // =============================
-    // 🔹 STOP / TP
-    // =============================
+    // ==========================================
+    // 🔹 LÍMITE DE TRADES OPEN
+    // ==========================================
+
+    let openCount = 0;
+
+    try {
+      const openResponse = await fetch(
+        `${process.env.SHEETS_WEBHOOK_URL}?action=get_open_count`
+      );
+
+      const openData = await openResponse.json();
+      openCount = Number(openData.open_count || 0);
+
+    } catch (err) {
+      console.error("Open count fetch error:", err);
+    }
+
+    if (openCount >= 2) {
+      return res.status(200).json({
+        ok: false,
+        error: "REJECTED_MAX_OPEN",
+        openCount,
+        equity
+      });
+    }
+
+    // ==========================================
+    // 🔹 STOP / TAKE PROFIT
+    // ==========================================
 
     let stop;
     let takeProfit;
 
     if (body.side?.toLowerCase() === "sell") {
       stop = price * 1.01;
-      const stopDistance = stop - price;
-      takeProfit = price - (stopDistance * 2);
+      const stopDistanceTemp = stop - price;
+      takeProfit = price - (stopDistanceTemp * 2);
     } else {
       stop = price * 0.99;
-      const stopDistance = price - stop;
-      takeProfit = price + (stopDistance * 2);
+      const stopDistanceTemp = price - stop;
+      takeProfit = price + (stopDistanceTemp * 2);
     }
 
     const stopDistance = Math.abs(price - stop);
     const qty = Math.floor(riskUsd / stopDistance);
 
-    // =============================
+    // ==========================================
     // 🔹 TELEGRAM
-    // =============================
+    // ==========================================
 
     try {
       const message = `
@@ -105,9 +132,9 @@ Take Profit: ${takeProfit.toFixed(2)}
       console.error("Telegram error:", err);
     }
 
-    // =============================
+    // ==========================================
     // 🔹 SHEETS LOGGING
-    // =============================
+    // ==========================================
 
     try {
       await fetch(process.env.SHEETS_WEBHOOK_URL, {
