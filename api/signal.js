@@ -17,14 +17,43 @@ export default async function handler(req, res) {
     }
 
     const price = Number(body.price || 0);
-    const capital = Number(process.env.DEMO_CAPITAL_USD || 5000);
-    const riskPct = Number(process.env.RISK_PCT_PER_TRADE || 1);
-
     if (!price || price <= 0) {
       return res.status(400).json({ error: "Invalid price" });
     }
 
-    const riskUsd = capital * (riskPct / 100);
+    // =============================
+    // 🔹 EQUITY DINÁMICO
+    // =============================
+
+    const baseCapital = Number(process.env.DEMO_CAPITAL_USD || 5000);
+    const riskPct = Number(process.env.RISK_PCT_PER_TRADE || 1);
+
+    let totalPnl = 0;
+
+    try {
+      const equityResponse = await fetch(
+        `${process.env.SHEETS_WEBHOOK_URL}?action=get_equity`
+      );
+
+      const equityData = await equityResponse.json();
+      totalPnl = Number(equityData.total_pnl || 0);
+
+    } catch (err) {
+      console.error("Equity fetch error:", err);
+      totalPnl = 0; // fallback
+    }
+
+    const equity = baseCapital + totalPnl;
+
+    if (equity <= 0) {
+      return res.status(500).json({ error: "Equity invalid" });
+    }
+
+    const riskUsd = equity * (riskPct / 100);
+
+    // =============================
+    // 🔹 STOP / TP
+    // =============================
 
     let stop;
     let takeProfit;
@@ -43,8 +72,9 @@ export default async function handler(req, res) {
     const qty = Math.floor(riskUsd / stopDistance);
 
     // =============================
-    // TELEGRAM ALERT
+    // 🔹 TELEGRAM
     // =============================
+
     try {
       const message = `
 📈 Signal Received
@@ -52,14 +82,14 @@ export default async function handler(req, res) {
 Symbol: ${body.symbol}
 Side: ${body.side?.toUpperCase()}
 Price: ${price}
+Equity: ${equity.toFixed(2)}
+Risk USD: ${riskUsd.toFixed(2)}
+Qty: ${qty}
 Stop: ${stop.toFixed(2)}
 Take Profit: ${takeProfit.toFixed(2)}
-Qty: ${qty}
-Risk USD: ${riskUsd}
-Env: ${process.env.ENV || "staging"}
 `;
 
-      const telegramResponse = await fetch(
+      await fetch(
         `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`,
         {
           method: "POST",
@@ -71,17 +101,16 @@ Env: ${process.env.ENV || "staging"}
         }
       );
 
-      console.log("Telegram status:", telegramResponse.status);
-
     } catch (err) {
       console.error("Telegram error:", err);
     }
 
     // =============================
-    // GOOGLE SHEETS LOGGING
+    // 🔹 SHEETS LOGGING
     // =============================
+
     try {
-      const sheetsResponse = await fetch(process.env.SHEETS_WEBHOOK_URL, {
+      await fetch(process.env.SHEETS_WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -95,14 +124,8 @@ Env: ${process.env.ENV || "staging"}
           risk_usd: riskUsd,
           stop_distance: stopDistance,
           notes: ""
-        }),
-        redirect: "follow"
+        })
       });
-
-      const responseText = await sheetsResponse.text();
-
-      console.log("Sheets status:", sheetsResponse.status);
-      console.log("Sheets response:", responseText);
 
     } catch (err) {
       console.error("Sheets error:", err);
@@ -110,13 +133,9 @@ Env: ${process.env.ENV || "staging"}
 
     return res.status(200).json({
       ok: true,
-      symbol: body.symbol,
-      side: body.side,
-      price,
-      stop,
-      takeProfit,
-      qty,
-      riskUsd
+      equity,
+      riskUsd,
+      qty
     });
 
   } catch (error) {
